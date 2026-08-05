@@ -27,6 +27,8 @@ app.use(bodyParser.json());
 // User must provide valid credentials in .env or service-account.json
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_AUTH_EMAIL = process.env.GOOGLE_AUTH_EMAIL;
+// Data tab name; columns: A=Zone, B=Unit, C=Name, D=Mobile, E=Call status, F=Call response, G=Mentor
+const SHEET_TAB = process.env.SHEET_TAB || 'Sheet1';
 
 // Robust parsing for the private key
 const getPrivateKey = () => {
@@ -70,18 +72,41 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 
+// Row shape helper for the data tab (A2:G)
+const rowToMember = (row) => ({
+    zone: (row[0] || '').trim(),
+    unit: (row[1] || '').trim(),
+    name: (row[2] || '').trim(),
+    mobile: (row[3] || '').trim(),
+    callStatus: (row[4] || '').trim(),
+    callRemarks: (row[5] || '').trim(),
+    mentor: (row[6] || '').trim()
+});
+
+// Mentors (sheet admins) only see rows assigned to them; the env master admin sees all
+const visibleToUser = (member, user) =>
+    user.role === 'super-admin' || member.mentor === user.username;
+
+const fetchMembers = async () => {
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_TAB}!A2:G`,
+    });
+    return (response.data.values || []).map(rowToMember);
+};
+
 // --- Routes ---
 
-// 1. POST /api/call-status - Update Call Status (Col I) and Remarks (Col J) (Protected)
+// 1. POST /api/call-status - Update Call status (Col E) and Call response (Col F) (Protected)
 app.post('/api/call-status', authenticateToken, async (req, res) => {
     console.log("Received call status update request", req.body);
-    const { zone, name, callStatus, remarks } = req.body;
+    const { zone, unit, name, callStatus, remarks } = req.body;
 
     try {
-        // 1. Fetch range A:B to find row
+        // 1. Fetch A:G to find the row (and its mentor)
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: 'ExecutiveList!A2:B',
+            range: `${SHEET_TAB}!A2:G`,
         });
 
         const rows = response.data.values;
@@ -89,23 +114,30 @@ app.post('/api/call-status', authenticateToken, async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'No data found in sheet' });
         }
 
-        // 2. Find row index
-        const rowIndex = rows.findIndex(row => {
-            const rowZone = (row[0] || '').trim().toLowerCase();
-            const rowName = (row[1] || '').trim().toLowerCase();
-            return rowZone === zone.trim().toLowerCase() && rowName === name.trim().toLowerCase();
-        });
+        // 2. Find row index by zone + unit + name
+        const norm = (v) => (v || '').trim().toLowerCase();
+        const rowIndex = rows.findIndex(row =>
+            norm(row[0]) === norm(zone) &&
+            norm(row[1]) === norm(unit) &&
+            norm(row[2]) === norm(name)
+        );
 
         if (rowIndex === -1) {
-            console.error(`User not found: ${zone} - ${name}`);
-            return res.status(404).json({ status: 'error', message: 'User not found in the list' });
+            console.error(`Person not found: ${zone} / ${unit} - ${name}`);
+            return res.status(404).json({ status: 'error', message: 'Person not found in the list' });
+        }
+
+        // 3. Mentors may only update their own assignments
+        const rowMentor = (rows[rowIndex][6] || '').trim();
+        if (req.user.role !== 'super-admin' && rowMentor !== req.user.username) {
+            return res.status(403).json({ status: 'error', message: 'Not assigned to you' });
         }
 
         const exactRowNumber = rowIndex + 2;
-        console.log(`Found user at row ${exactRowNumber}`);
+        console.log(`Found person at row ${exactRowNumber}`);
 
-        // 3. Update columns I (Call Status) and J (Remarks)
-        const updateRange = `ExecutiveList!I${exactRowNumber}:J${exactRowNumber}`;
+        // 4. Update columns E (Call status) and F (Call response)
+        const updateRange = `${SHEET_TAB}!E${exactRowNumber}:F${exactRowNumber}`;
 
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
@@ -129,7 +161,7 @@ app.get('/api/config', authenticateToken, async (req, res) => {
     try {
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_ID,
-            range: 'ExecutiveList!S1:U1',
+            range: `${SHEET_TAB}!S1:U1`,
         });
         const row = (response.data.values || [[]])[0] || [];
         res.json({
@@ -148,7 +180,7 @@ app.post('/api/config/message', authenticateToken, async (req, res) => {
     try {
         await sheets.spreadsheets.values.update({
             spreadsheetId: SPREADSHEET_ID,
-            range: 'ExecutiveList!S1',
+            range: `${SHEET_TAB}!S1`,
             valueInputOption: 'USER_ENTERED',
             resource: { values: [[message]] },
         });
@@ -165,7 +197,7 @@ app.post('/api/config/message', authenticateToken, async (req, res) => {
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// 4. POST /api/auth/login - Admin login
+// 4. POST /api/auth/login - Admin / mentor login
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -180,7 +212,7 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
 
-        // 2. Check Sheet Admins
+        // 2. Check Sheet Admins (mentors)
         try {
             const response = await sheets.spreadsheets.values.get({
                 spreadsheetId: SPREADSHEET_ID,
@@ -197,11 +229,11 @@ app.post('/api/auth/login', async (req, res) => {
             });
 
             if (adminUser) {
-                const token = generateToken({ username, role: 'admin' });
+                const token = generateToken({ username: (adminUser[0] || '').trim(), role: 'admin' });
                 return res.json({
                     success: true,
                     token,
-                    user: { username, role: 'admin' }
+                    user: { username: (adminUser[0] || '').trim(), role: 'admin' }
                 });
             }
 
@@ -219,39 +251,27 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// 5. GET /api/dashboard/zones - Zone-wise statistics (Protected)
+// 5. GET /api/dashboard/zones - Zones with units and call progress (Protected, mentor-scoped)
 app.get('/api/dashboard/zones', authenticateToken, async (req, res) => {
     try {
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: 'ExecutiveList!A2:E',
-        });
+        const members = (await fetchMembers()).filter(m => visibleToUser(m, req.user));
 
-        const rows = response.data.values || [];
-
-        // Group by zone, excluding rows with "Leave" status
         const zoneMap = {};
-        rows.forEach(row => {
-            const zone = (row[0] || '').trim();
-            const status = (row[4] || '').trim();
+        members.forEach(m => {
+            if (!m.zone) return;
 
-            if (!zone) return;
-            // Skip rows where status is "Leave"
-            if (status === 'Leave') return;
-
-            if (!zoneMap[zone]) {
-                zoneMap[zone] = { name: zone, total: 0, registered: 0, notRegistered: 0 };
+            if (!zoneMap[m.zone]) {
+                zoneMap[m.zone] = { name: m.zone, units: [], total: 0, called: 0 };
             }
 
-            zoneMap[zone].total++;
-            if (status === 'Success') {
-                zoneMap[zone].registered++;
-            } else {
-                zoneMap[zone].notRegistered++;
+            zoneMap[m.zone].total++;
+            if (m.callStatus) zoneMap[m.zone].called++;
+            if (m.unit && !zoneMap[m.zone].units.includes(m.unit)) {
+                zoneMap[m.zone].units.push(m.unit);
             }
         });
 
-        const zones = Object.values(zoneMap);
+        const zones = Object.values(zoneMap).map(z => ({ ...z, units: z.units.sort() }));
         res.json({ zones });
     } catch (error) {
         console.error('Error fetching zones:', error);
@@ -259,67 +279,75 @@ app.get('/api/dashboard/zones', authenticateToken, async (req, res) => {
     }
 });
 
-// 6. GET /api/dashboard/members - Get member list with filtering (Protected)
+// 6. GET /api/dashboard/members - Member list with filtering (Protected, mentor-scoped)
 app.get('/api/dashboard/members', authenticateToken, async (req, res) => {
     try {
-        const { zone, status, role } = req.query;
+        const { zone, unit } = req.query;
 
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: 'ExecutiveList!A2:K',
-        });
-
-        let rows = response.data.values || [];
-
-        // Transform to member objects, excluding those with "Leave" status
-        let members = rows
-            .filter(row => (row[4] || '').trim() !== 'Leave')
-            .map(row => {
-                const mobileC = (row[2] || '').trim();
-                const mobileH = (row[7] || '').trim();
-                // Use column H if column C is empty
-                const mobile = mobileC || mobileH;
-
-                return {
-                    zone: (row[0] || '').trim(),
-                    name: (row[1] || '').trim(),
-                    mobile: mobile,
-                    participated: (row[3] || '').trim(),
-                    status: (row[4] || '').trim(),
-                    role: (row[5] || '').trim(),
-                    executive: (row[6] || '').trim(),
-                    registered: (row[4] || '').trim() === 'Success',
-                    callStatus: (row[8] || '').trim(),
-                    callRemarks: (row[9] || '').trim(),
-                    checkedIn: (row[10] || '').trim() === 'Present'
-                };
-            });
+        let members = (await fetchMembers()).filter(m => visibleToUser(m, req.user));
 
         // Filter by zone if specified
         if (zone && zone !== 'all') {
             members = members.filter(m => m.zone.toLowerCase() === zone.toLowerCase());
         }
 
-        // Filter by role if specified
-        if (role && role !== 'All') {
-            if (role === 'Secretariat') {
-                members = members.filter(m => m.role === role);
-            } else if (role === 'Executive') {
-                members = members.filter(m => m.executive === role);
-            }
-        }
-
-        // Filter by status if specified
-        if (status === 'registered') {
-            members = members.filter(m => m.registered);
-        } else if (status === 'not_registered') {
-            members = members.filter(m => !m.registered);
+        // Filter by unit if specified
+        if (unit && unit !== 'all') {
+            members = members.filter(m => m.unit.toLowerCase() === unit.toLowerCase());
         }
 
         res.json({ members });
     } catch (error) {
         console.error('Error fetching members:', error);
         res.status(500).json({ error: 'Failed to fetch members' });
+    }
+});
+
+// 7. GET /api/report - Call-completion report (Protected, mentor-scoped)
+app.get('/api/report', authenticateToken, async (req, res) => {
+    try {
+        const members = (await fetchMembers()).filter(m => visibleToUser(m, req.user));
+
+        const pct = (called, total) => total > 0 ? parseFloat(((called / total) * 100).toFixed(1)) : 0;
+
+        const total = members.length;
+        const called = members.filter(m => m.callStatus).length;
+
+        const groupStats = (keyFn) => {
+            const map = {};
+            members.forEach(m => {
+                const key = keyFn(m);
+                if (!key) return;
+                if (!map[key]) map[key] = { total: 0, called: 0 };
+                map[key].total++;
+                if (m.callStatus) map[key].called++;
+            });
+            return map;
+        };
+
+        const byZone = Object.entries(groupStats(m => m.zone))
+            .map(([zone, s]) => ({ zone, total: s.total, called: s.called, percent: pct(s.called, s.total) }))
+            .sort((a, b) => a.zone.localeCompare(b.zone));
+
+        const result = {
+            overall: { total, called, remaining: total - called, percent: pct(called, total) },
+            byZone,
+            pending: members
+                .filter(m => !m.callStatus)
+                .map(({ zone, unit, name, mobile, mentor }) => ({ zone, unit, name, mobile, mentor }))
+        };
+
+        // Per-mentor breakdown only for the master admin
+        if (req.user.role === 'super-admin') {
+            result.byMentor = Object.entries(groupStats(m => m.mentor))
+                .map(([mentor, s]) => ({ mentor, total: s.total, called: s.called, percent: pct(s.called, s.total) }))
+                .sort((a, b) => a.mentor.localeCompare(b.mentor));
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error building report:', error);
+        res.status(500).json({ error: 'Failed to build report' });
     }
 });
 

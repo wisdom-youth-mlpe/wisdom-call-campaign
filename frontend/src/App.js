@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import CampaignPage from './components/CampaignPage';
+import ReportPage from './components/ReportPage';
 import './App.css';
 
 
@@ -36,6 +37,14 @@ function AppRoutes() {
                 element={
                     <ProtectedRoute>
                         <CampaignPage />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/report"
+                element={
+                    <ProtectedRoute>
+                        <ReportPage />
                     </ProtectedRoute>
                 }
             />

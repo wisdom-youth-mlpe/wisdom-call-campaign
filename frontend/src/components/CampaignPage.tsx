@@ -5,23 +5,19 @@ import './CampaignPage.css';
 
 interface Zone {
     name: string;
+    units: string[];
     total: number;
-    registered: number;
-    notRegistered: number;
+    called: number;
 }
 
 interface Member {
     zone: string;
+    unit: string;
     name: string;
     mobile: string;
-    participated: string;
-    status: string;
-    role: string;
-    executive: string;
-    registered: boolean;
     callStatus?: string;
     callRemarks?: string;
-    checkedIn?: boolean;
+    mentor: string;
 }
 
 const CALL_STATUS_OPTIONS = [
@@ -58,21 +54,22 @@ const getTileStyle = (callStatus?: string): React.CSSProperties => {
 };
 
 export default function CampaignPage() {
-    const { token, logout, isLoading } = useAuth();
+    const { token, logout, user, isLoading } = useAuth();
     const navigate = useNavigate();
     const [zones, setZones] = useState<Zone[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [selectedZone, setSelectedZone] = useState<string>('all');
+    const [selectedUnit, setSelectedUnit] = useState<string>('all');
     const [loading, setLoading] = useState(true);
     const [campaignMessage, setCampaignMessage] = useState('Assalamu Alaikum');
-    const [campaignStatus, setCampaignStatus] = useState<'all' | 'registered' | 'notRegistered'>('all');
     const [callStatusFilter, setCallStatusFilter] = useState<string>('all');
+    const [mentorFilter, setMentorFilter] = useState<string>('all');
     const [messageSaving, setMessageSaving] = useState(false);
     const [statsExpanded, setStatsExpanded] = useState(false);
     const [listExpanded, setListExpanded] = useState(false);
-    const [absentListExpanded, setAbsentListExpanded] = useState(false);
     const [templateOpen, setTemplateOpen] = useState(false);
 
+    const isSuperAdmin = user?.role === 'super-admin';
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
     useEffect(() => {
@@ -93,7 +90,7 @@ export default function CampaignPage() {
             fetchMembers();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedZone, token]);
+    }, [selectedZone, selectedUnit, token]);
 
     const fetchConfig = async () => {
         try {
@@ -145,7 +142,7 @@ export default function CampaignPage() {
 
     const fetchMembers = async () => {
         try {
-            const url = `${backendUrl}/api/dashboard/members?zone=${selectedZone}`;
+            const url = `${backendUrl}/api/dashboard/members?zone=${encodeURIComponent(selectedZone)}&unit=${encodeURIComponent(selectedUnit)}`;
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -163,7 +160,7 @@ export default function CampaignPage() {
         try {
             // Update local state first for immediate UI response
             setMembers(prevMembers => prevMembers.map(m => {
-                if (m.zone === member.zone && m.name === member.name) {
+                if (m.zone === member.zone && m.unit === member.unit && m.name === member.name) {
                     return { ...m, callStatus: status, callRemarks: remarks };
                 }
                 return m;
@@ -177,6 +174,7 @@ export default function CampaignPage() {
                 },
                 body: JSON.stringify({
                     zone: member.zone,
+                    unit: member.unit,
                     name: member.name,
                     callStatus: status,
                     remarks: remarks
@@ -200,11 +198,29 @@ export default function CampaignPage() {
         return <div className="campaign-loading">Loading campaign...</div>;
     }
 
-    // Filter members for campaign view
-    const campaignMembers = members.filter(m => {
-        if (campaignStatus === 'registered') return m.registered;
-        if (campaignStatus === 'notRegistered') return !m.registered;
-        return true;
+    // Units of the currently selected zone (for the unit filter)
+    const unitOptions = selectedZone === 'all'
+        ? []
+        : (zones.find(z => z.name === selectedZone)?.units || []);
+
+    // Mentor filter (super-admin only, client-side)
+    const mentorOptions = isSuperAdmin
+        ? Array.from(new Set(members.map(m => m.mentor).filter(Boolean))).sort()
+        : [];
+    const visibleMembers = (isSuperAdmin && mentorFilter !== 'all')
+        ? members.filter(m => m.mentor === mentorFilter)
+        : members;
+
+    // Progress across the visible set (before the call-status filter)
+    const calledCount = visibleMembers.filter(m => m.callStatus).length;
+    const progressPercent = visibleMembers.length > 0
+        ? Math.round((calledCount / visibleMembers.length) * 100)
+        : 0;
+
+    const listMembers = visibleMembers.filter(m => {
+        if (callStatusFilter === 'all') return true;
+        if (callStatusFilter === 'not_called') return !m.callStatus;
+        return m.callStatus === callStatusFilter;
     });
 
     return (
@@ -213,6 +229,13 @@ export default function CampaignPage() {
             <header className="campaign-header">
                 <h1>📞 Call Campaign</h1>
                 <div className="campaign-header-actions">
+                    <button
+                        className="header-btn"
+                        onClick={() => navigate('/report')}
+                        title="Report"
+                    >
+                        📊
+                    </button>
                     <button
                         className="header-btn"
                         onClick={() => setTemplateOpen(!templateOpen)}
@@ -261,14 +284,17 @@ export default function CampaignPage() {
                     </div>
                 )}
 
-                {/* Zone Filter & Status Filters */}
+                {/* Filters */}
                 <div className="filters-card">
                     <div className="filter-group">
-                        <label htmlFor="campaign-zone-select">Select Zone:</label>
+                        <label htmlFor="campaign-zone-select">Zone:</label>
                         <select
                             id="campaign-zone-select"
                             value={selectedZone}
-                            onChange={(e) => setSelectedZone(e.target.value)}
+                            onChange={(e) => {
+                                setSelectedZone(e.target.value);
+                                setSelectedUnit('all');
+                            }}
                             className="zone-select"
                         >
                             <option value="all">All Zones</option>
@@ -280,22 +306,42 @@ export default function CampaignPage() {
                         </select>
                     </div>
 
-                    <div className="filter-group">
-                        <label htmlFor="campaign-status-select">Registration Status:</label>
-                        <select
-                            id="campaign-status-select"
-                            value={campaignStatus}
-                            onChange={(e) => setCampaignStatus(e.target.value as any)}
-                            className="zone-select"
-                        >
-                            <option value="all">All</option>
-                            <option value="registered">Registered</option>
-                            <option value="notRegistered">Not Registered</option>
-                        </select>
-                    </div>
+                    {selectedZone !== 'all' && unitOptions.length > 0 && (
+                        <div className="filter-group">
+                            <label htmlFor="campaign-unit-select">Unit:</label>
+                            <select
+                                id="campaign-unit-select"
+                                value={selectedUnit}
+                                onChange={(e) => setSelectedUnit(e.target.value)}
+                                className="zone-select"
+                            >
+                                <option value="all">All Units</option>
+                                {unitOptions.map(unit => (
+                                    <option key={unit} value={unit}>{unit}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {isSuperAdmin && mentorOptions.length > 0 && (
+                        <div className="filter-group">
+                            <label htmlFor="campaign-mentor-select">Mentor:</label>
+                            <select
+                                id="campaign-mentor-select"
+                                value={mentorFilter}
+                                onChange={(e) => setMentorFilter(e.target.value)}
+                                className="zone-select"
+                            >
+                                <option value="all">All Mentors</option>
+                                {mentorOptions.map(mentor => (
+                                    <option key={mentor} value={mentor}>{mentor}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     <div className="filter-group">
-                        <label htmlFor="campaign-call-status-filter">Call Status Filter:</label>
+                        <label htmlFor="campaign-call-status-filter">Call Status:</label>
                         <select
                             id="campaign-call-status-filter"
                             value={callStatusFilter}
@@ -314,13 +360,26 @@ export default function CampaignPage() {
                     </div>
                 </div>
 
+                {/* Progress strip */}
+                {visibleMembers.length > 0 && (
+                    <div className="progress-strip">
+                        <div className="progress-label">
+                            <span>{calledCount} / {visibleMembers.length} called</span>
+                            <span>{progressPercent}%</span>
+                        </div>
+                        <div className="progress-track">
+                            <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+                        </div>
+                    </div>
+                )}
+
                 {/* ── WhatsApp Summary Message ── */}
                 {(() => {
                     if (selectedZone !== 'all') return null; // Only show on All Zones
 
-                    // Build per-zone uncalled count from ALL members (not filtered)
+                    // Build per-zone uncalled count from the visible members
                     const zoneUncalledMap: Record<string, number> = {};
-                    members.forEach(m => {
+                    visibleMembers.forEach(m => {
                         if (!m.callStatus) {
                             zoneUncalledMap[m.zone] = (zoneUncalledMap[m.zone] || 0) + 1;
                         }
@@ -328,7 +387,7 @@ export default function CampaignPage() {
                     const zoneEntries = Object.entries(zoneUncalledMap).filter(([, count]) => count > 0);
                     if (zoneEntries.length === 0) return null;
 
-                    const waMessage = `കൺഫർമേഷൻ കോൾ ഇനിയും ബാക്കിയുള്ളത്...\n\n` +
+                    const waMessage = `കോൾ ഇനിയും ബാക്കിയുള്ളത്...\n\n` +
                         zoneEntries.map(([zone, count]) => `${zone} (${count})`).join('\n');
 
                     const copyWaSummary = async () => {
@@ -394,10 +453,10 @@ export default function CampaignPage() {
                 {/* ── WhatsApp List Message ── */}
                 {(() => {
                     if (selectedZone === 'all') return null; // Only show for a specific zone
-                    if (campaignMembers.length === 0) return null;
+                    if (visibleMembers.length === 0) return null;
 
                     const waMessage = `${selectedZone} മണ്ഡലത്തിലെ അംഗങ്ങൾ\n\n` +
-                        campaignMembers.map((m, idx) => `${idx + 1}. ${m.name} ${m.mobile}`).join('\n');
+                        visibleMembers.map((m, idx) => `${idx + 1}. ${m.name} (${m.unit}) ${m.mobile}`).join('\n');
 
                     const copyWaList = async () => {
                         try {
@@ -459,92 +518,15 @@ export default function CampaignPage() {
                     );
                 })()}
 
-                {/* ── WhatsApp Absent List Message ── */}
-                {(() => {
-                    if (selectedZone === 'all') return null; // Only show for a specific zone
-                    const absentMembers = campaignMembers.filter(m => m.registered && !m.checkedIn);
-                    if (absentMembers.length === 0) return null;
-
-                    const waMessage = `${selectedZone} മണ്ഡലത്തിൽ രജിസ്റ്റർ ചെയ്തിട്ട് പങ്കെടുക്കാത്തവർ\n\n` +
-                        absentMembers.map((m, idx) => `${idx + 1}. ${m.name} ${m.mobile}`).join('\n');
-
-                    const copyWaAbsent = async () => {
-                        try {
-                            await navigator.clipboard.writeText(waMessage);
-                            alert('Copied to clipboard!');
-                        } catch {
-                            alert('Failed to copy. Please copy manually.');
-                        }
-                    };
-
-                    return (
-                        <div style={{
-                            background: '#fff1f2',
-                            border: '1.5px solid #fecdd3',
-                            borderRadius: 16,
-                            padding: '16px 20px',
-                            marginBottom: 28,
-                            position: 'relative'
-                        }}>
-                            <div
-                                onClick={() => setAbsentListExpanded(!absentListExpanded)}
-                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                            >
-                                <div style={{ fontWeight: 800, fontSize: 15, color: '#be123c', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    💬 WhatsApp Absent Member List
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                    {absentListExpanded && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); copyWaAbsent(); }}
-                                            style={{
-                                                background: '#25D366', color: 'white', border: 'none',
-                                                borderRadius: 10, padding: '6px 14px', cursor: 'pointer',
-                                                fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
-                                                display: 'flex', alignItems: 'center', gap: 6
-                                            }}
-                                        >
-                                            📋 Copy
-                                        </button>
-                                    )}
-                                    <span style={{ fontSize: 18, color: '#be123c', userSelect: 'none' }}>
-                                        {absentListExpanded ? '▲' : '▼'}
-                                    </span>
-                                </div>
-                            </div>
-                            {absentListExpanded && (
-                                <pre style={{
-                                    margin: '14px 0 0', fontFamily: 'Noto Sans Malayalam, Quicksand, sans-serif',
-                                    fontSize: 14, color: '#1a1f2e', lineHeight: 1.8,
-                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                                    background: 'rgba(255,255,255,0.6)', borderRadius: 10,
-                                    padding: '12px 16px', maxHeight: '300px', overflowY: 'auto'
-                                }}>
-                                    {waMessage}
-                                </pre>
-                            )}
-                        </div>
-                    );
-                })()}
-
                 {/* Campaign List */}
                 <div className="members-list">
-                    <h3>📞 Call List - {selectedZone === 'all' ? 'All Zones' : selectedZone} ({campaignMembers.filter(m => {
-                        if (callStatusFilter === 'all') return true;
-                        if (callStatusFilter === 'not_called') return !m.callStatus;
-                        return m.callStatus === callStatusFilter;
-                    }).length})
-                    </h3>
+                    <h3>📞 Call List - {selectedZone === 'all' ? 'All Zones' : selectedZone} ({listMembers.length})</h3>
 
-                    {campaignMembers.length === 0 ? (
+                    {listMembers.length === 0 ? (
                         <p className="no-data">No members found matching criteria!</p>
                     ) : (
                         <div className="campaign-grid">
-                            {campaignMembers.filter(m => {
-                                if (callStatusFilter === 'all') return true;
-                                if (callStatusFilter === 'not_called') return !m.callStatus;
-                                return m.callStatus === callStatusFilter;
-                            }).map((member, idx) => (
+                            {listMembers.map((member, idx) => (
                                 <div key={idx} className="member-card" style={getTileStyle(member.callStatus)}>
                                     <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         {member.name}
@@ -557,12 +539,13 @@ export default function CampaignPage() {
                                             </span>
                                         )}
                                     </div>
-                                    <div style={{ color: '#666', fontSize: '14px', marginBottom: '5px' }}>{member.zone}</div>
+                                    <div style={{ color: '#666', fontSize: '14px', marginBottom: '5px' }}>
+                                        {member.unit ? `${member.unit} · ${member.zone}` : member.zone}
+                                    </div>
                                     <div style={{ color: '#888', fontSize: '14px', marginBottom: '5px' }}>{member.mobile || 'No Mobile'}</div>
-
-                                    {member.registered && (
-                                        <div style={{ fontSize: '14px', marginBottom: '15px', fontWeight: 600, color: member.checkedIn ? '#16a34a' : '#ef4444' }}>
-                                            {member.checkedIn ? '✅ Present' : '❌ Absent'}
+                                    {isSuperAdmin && member.mentor && (
+                                        <div style={{ color: '#7c3aed', fontSize: '13px', marginBottom: '10px', fontWeight: 600 }}>
+                                            👤 {member.mentor}
                                         </div>
                                     )}
 
@@ -587,7 +570,7 @@ export default function CampaignPage() {
                                                     // Update local state immediately for smooth typing
                                                     const newRemarks = e.target.value;
                                                     setMembers(prev => prev.map(m =>
-                                                        (m.zone === member.zone && m.name === member.name)
+                                                        (m.zone === member.zone && m.unit === member.unit && m.name === member.name)
                                                             ? { ...m, callRemarks: newRemarks }
                                                             : m
                                                     ));

@@ -1,6 +1,6 @@
 # Wisdom Call Campaign
 
-Standalone call-campaign app extracted from the Tharbiya registration project. Callers log in, work through a member list, dial via tap-to-call, record a call status (6 Malayalam options) with optional remarks, and send/copy WhatsApp messages. All data lives in a Google Sheet — no database.
+Standalone call-campaign app extracted from the Tharbiya registration project. Mentors log in and see the people assigned to them, dial via tap-to-call, record a call status (6 Malayalam options) with an optional response note, and send/copy WhatsApp messages. A report page shows completion percentage and who is left. All data lives in a Google Sheet — no database.
 
 - **Frontend:** React (CRA), mobile-first UI → `frontend/`
 - **Backend:** Express + Google Sheets API → `backend/`
@@ -10,17 +10,16 @@ Standalone call-campaign app extracted from the Tharbiya registration project. C
 
 1. Create a new Google Sheet and note its ID (from the URL).
 2. Share it as **Editor** with the service-account email (the `GOOGLE_AUTH_EMAIL` value).
-3. Create a tab named **`ExecutiveList`** (exact name, case-sensitive) with this header row:
+3. Data tab (name it whatever you like and set `SHEET_TAB` in `.env`; default `Sheet1`) with this header row:
 
-   | A | B | C | D | E | F | G | H | I | J | K | L |
-   |---|---|---|---|---|---|---|---|---|---|---|---|
-   | Zone | Name | Mobile | Participated | Status | Role | Executive | AltMobile | CallStatus | CallRemarks | CheckIn | CheckInTime |
+   | A | B | C | D | E | F | G |
+   |---|---|---|---|---|---|---|
+   | Zone | Unit | Name | Mobile Number | Call status | Call response | Mentor |
 
-   - Paste the people list from **row 2** down, filling **A (Zone), B (Name), C (Mobile)**. H (AltMobile) is used as a fallback when C is empty. Leave D–G and I–L blank.
-   - Do **not** put `Leave` in column E — those rows are hidden from the app.
+   - People from **row 2** down: fill Zone, Unit, Name, Mobile Number, and Mentor. Leave E/F blank — the app writes the call status to **E** and the free-text response to **F**.
+   - **Mentor** (G) must exactly match a username in the `admin` tab. A mentor who logs in sees only the rows assigned to them; the master admin (env credentials) sees everyone.
    - Cell **`S1`** holds the default WhatsApp message (can be set from the app), **`T1`** an optional image URL.
-   - The app writes call responses to **I (status)** and **J (remarks)**.
-4. Create a tab named **`admin`** with headers `username` (A1) / `password` (B1), and caller accounts from row 2 (plain text).
+4. Create a tab named **`admin`** with headers `username` (A1) / `password` (B1), and one row per mentor from row 2 (plain text).
 
 ## Backend
 
@@ -31,7 +30,7 @@ npm install
 node app.js            # runs on port 5001
 ```
 
-`.env` values: `SPREADSHEET_ID` (the new sheet), `GOOGLE_AUTH_EMAIL`, `GOOGLE_AUTH_PRIVATE_KEY`, `JWT_SECRET` (fresh value — don't reuse another app's), `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
+`.env` values: `SPREADSHEET_ID` (the new sheet), `SHEET_TAB` (data tab name, default `Sheet1`), `GOOGLE_AUTH_EMAIL`, `GOOGLE_AUTH_PRIVATE_KEY`, `JWT_SECRET` (fresh value — don't reuse another app's), `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
 
 ## Frontend
 
