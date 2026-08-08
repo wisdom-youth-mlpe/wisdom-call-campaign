@@ -3,12 +3,14 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 interface User {
     username: string;
     role: string;
+    name?: string;
+    orgViewer?: boolean;
 }
 
 interface AuthContextType {
     user: User | null;
     token: string | null;
-    login: (username: string, password: string) => Promise<void>;
+    login: (username: string, password: string) => Promise<User>;
     logout: () => void;
     isAuthenticated: boolean;
     isLoading: boolean;
@@ -53,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(data.user);
             localStorage.setItem('token', data.token);
             localStorage.setItem('user', JSON.stringify(data.user));
+            return data.user;
         } else {
             throw new Error(data.error || 'Login failed');
         }

@@ -18,6 +18,7 @@ interface Member {
     callStatus?: string;
     callRemarks?: string;
     mentor: string;
+    mentorName?: string;
 }
 
 const CALL_STATUS_OPTIONS = [
@@ -65,11 +66,11 @@ export default function CampaignPage() {
     const [callStatusFilter, setCallStatusFilter] = useState<string>('all');
     const [mentorFilter, setMentorFilter] = useState<string>('all');
     const [messageSaving, setMessageSaving] = useState(false);
-    const [statsExpanded, setStatsExpanded] = useState(false);
     const [listExpanded, setListExpanded] = useState(false);
     const [templateOpen, setTemplateOpen] = useState(false);
 
-    const isSuperAdmin = user?.role === 'super-admin';
+    const canSeeAllMentors = user?.role === 'super-admin' || user?.role === 'viewer';
+    const displayName = user?.name || user?.username || '';
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
     useEffect(() => {
@@ -203,11 +204,12 @@ export default function CampaignPage() {
         ? []
         : (zones.find(z => z.name === selectedZone)?.units || []);
 
-    // Mentor filter (super-admin only, client-side)
-    const mentorOptions = isSuperAdmin
-        ? Array.from(new Set(members.map(m => m.mentor).filter(Boolean))).sort()
+    // Mentor filter (super-admin only, client-side) — value is the mentor's username, label prefers their name
+    const mentorOptions = canSeeAllMentors
+        ? Array.from(new Map(members.filter(m => m.mentor).map(m => [m.mentor, m.mentorName || m.mentor])).entries())
+            .sort((a, b) => a[1].localeCompare(b[1]))
         : [];
-    const visibleMembers = (isSuperAdmin && mentorFilter !== 'all')
+    const visibleMembers = (canSeeAllMentors && mentorFilter !== 'all')
         ? members.filter(m => m.mentor === mentorFilter)
         : members;
 
@@ -227,7 +229,10 @@ export default function CampaignPage() {
         <div className="campaign-page">
             {/* Sticky header */}
             <header className="campaign-header">
-                <h1>📞 Call Campaign</h1>
+                <div>
+                    <h1>📞 Call Campaign</h1>
+                    {displayName && <div className="campaign-user">{displayName}</div>}
+                </div>
                 <div className="campaign-header-actions">
                     <button
                         className="header-btn"
@@ -236,6 +241,15 @@ export default function CampaignPage() {
                     >
                         📊
                     </button>
+                    {user?.orgViewer && (
+                        <button
+                            className="header-btn"
+                            onClick={() => navigate('/admin-report')}
+                            title="Super Admin: Org-Wide Report"
+                        >
+                            👑
+                        </button>
+                    )}
                     <button
                         className="header-btn"
                         onClick={() => setTemplateOpen(!templateOpen)}
@@ -323,7 +337,7 @@ export default function CampaignPage() {
                         </div>
                     )}
 
-                    {isSuperAdmin && mentorOptions.length > 0 && (
+                    {canSeeAllMentors && mentorOptions.length > 0 && (
                         <div className="filter-group">
                             <label htmlFor="campaign-mentor-select">Mentor:</label>
                             <select
@@ -333,8 +347,8 @@ export default function CampaignPage() {
                                 className="zone-select"
                             >
                                 <option value="all">All Mentors</option>
-                                {mentorOptions.map(mentor => (
-                                    <option key={mentor} value={mentor}>{mentor}</option>
+                                {mentorOptions.map(([mentor, label]) => (
+                                    <option key={mentor} value={mentor}>{label}</option>
                                 ))}
                             </select>
                         </div>
@@ -372,83 +386,6 @@ export default function CampaignPage() {
                         </div>
                     </div>
                 )}
-
-                {/* ── WhatsApp Summary Message ── */}
-                {(() => {
-                    if (selectedZone !== 'all') return null; // Only show on All Zones
-
-                    // Build per-zone uncalled count from the visible members
-                    const zoneUncalledMap: Record<string, number> = {};
-                    visibleMembers.forEach(m => {
-                        if (!m.callStatus) {
-                            zoneUncalledMap[m.zone] = (zoneUncalledMap[m.zone] || 0) + 1;
-                        }
-                    });
-                    const zoneEntries = Object.entries(zoneUncalledMap).filter(([, count]) => count > 0);
-                    if (zoneEntries.length === 0) return null;
-
-                    const waMessage = `കോൾ ഇനിയും ബാക്കിയുള്ളത്...\n\n` +
-                        zoneEntries.map(([zone, count]) => `${zone} (${count})`).join('\n');
-
-                    const copyWaSummary = async () => {
-                        try {
-                            await navigator.clipboard.writeText(waMessage);
-                            alert('Copied to clipboard!');
-                        } catch {
-                            alert('Failed to copy. Please copy manually.');
-                        }
-                    };
-
-                    return (
-                        <div style={{
-                            background: '#f0fdf4',
-                            border: '1.5px solid #86efac',
-                            borderRadius: 16,
-                            padding: '16px 20px',
-                            marginBottom: 16,
-                            position: 'relative'
-                        }}>
-                            <div
-                                onClick={() => setStatsExpanded(!statsExpanded)}
-                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                            >
-                                <div style={{ fontWeight: 800, fontSize: 15, color: '#065f46', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    💬 WhatsApp Summary Stats
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                    {statsExpanded && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); copyWaSummary(); }}
-                                            style={{
-                                                background: '#25D366', color: 'white', border: 'none',
-                                                borderRadius: 10, padding: '6px 14px', cursor: 'pointer',
-                                                fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
-                                                display: 'flex', alignItems: 'center', gap: 6
-                                            }}
-                                        >
-                                            📋 Copy
-                                        </button>
-                                    )}
-                                    <span style={{ fontSize: 18, color: '#065f46', userSelect: 'none' }}>
-                                        {statsExpanded ? '▲' : '▼'}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {statsExpanded && (
-                                <pre style={{
-                                    margin: '14px 0 0', fontFamily: 'Noto Sans Malayalam, Quicksand, sans-serif',
-                                    fontSize: 14, color: '#1a1f2e', lineHeight: 1.8,
-                                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                                    background: 'rgba(255,255,255,0.6)', borderRadius: 10,
-                                    padding: '12px 16px'
-                                }}>
-                                    {waMessage}
-                                </pre>
-                            )}
-                        </div>
-                    );
-                })()}
 
                 {/* ── WhatsApp List Message ── */}
                 {(() => {
@@ -543,9 +480,9 @@ export default function CampaignPage() {
                                         {member.unit ? `${member.unit} · ${member.zone}` : member.zone}
                                     </div>
                                     <div style={{ color: '#888', fontSize: '14px', marginBottom: '5px' }}>{member.mobile || 'No Mobile'}</div>
-                                    {isSuperAdmin && member.mentor && (
+                                    {canSeeAllMentors && member.mentor && (
                                         <div style={{ color: '#7c3aed', fontSize: '13px', marginBottom: '10px', fontWeight: 600 }}>
-                                            👤 {member.mentor}
+                                            👤 {member.mentorName || member.mentor}
                                         </div>
                                     )}
 

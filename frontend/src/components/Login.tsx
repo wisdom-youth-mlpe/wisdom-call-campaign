@@ -12,8 +12,9 @@ export default function Login() {
     const location = useLocation();
     const { login } = useAuth();
 
-    // Where to go after login — defaults to the campaign page, but respects redirect from ProtectedRoute
-    const from = (location.state as any)?.from?.pathname || '/';
+    // Where to go after login — respects a redirect from ProtectedRoute, otherwise
+    // defaults by role: viewers (superadmins tab) land on the report, everyone else on the campaign page
+    const redirectFrom = (location.state as any)?.from?.pathname;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -21,8 +22,9 @@ export default function Login() {
         setLoading(true);
 
         try {
-            await login(username, password);
-            navigate(from, { replace: true });
+            const loggedInUser = await login(username, password);
+            const dest = redirectFrom || (loggedInUser.role === 'viewer' ? '/report' : '/');
+            navigate(dest, { replace: true });
         } catch (err: any) {
             setError(err.message || 'Login failed. Please check your credentials.');
         } finally {

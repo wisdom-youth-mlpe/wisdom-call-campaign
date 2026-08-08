@@ -83,9 +83,21 @@ const rowToMember = (row) => ({
     mentor: (row[6] || '').trim()
 });
 
-// Mentors (sheet admins) only see rows assigned to them; the env master admin sees all
+// Mentors (sheet admins) only see rows assigned to them; the master admin and
+// sheet-based viewers (super_admin tab) see everything
 const visibleToUser = (member, user) =>
-    user.role === 'super-admin' || member.mentor === user.username;
+    user.role === 'super-admin' || user.role === 'viewer' || member.mentor === user.username;
+
+// Call status values written to Col E, mirrored from the frontend's CALL_STATUS_OPTIONS
+const CALL_STATUS_OPTIONS = [
+    { value: '', label: 'Not Called Yet' },
+    { value: 'vilichu_pankedukkum', label: 'വിളിച്ചു, പങ്കെടുക്കും' },
+    { value: 'vilichu_pankedukkilla', label: 'വിളിച്ചു, പങ്കെടുക്കില്ല' },
+    { value: 'phone_eduthilla_whatsapp', label: 'ഫോൺ എടുത്തില്ല, വാട്സാപ്പ് അയച്ചു' },
+    { value: 'phone_eduthilla', label: 'ഫോൺ എടുത്തില്ല' },
+    { value: 'call_pokunnilla', label: 'കോൾ പോകുന്നില്ല' },
+    { value: 'mattullava', label: 'മറ്റുള്ളവ' }
+];
 
 const fetchMembers = async () => {
     const response = await sheets.spreadsheets.values.get({
@@ -93,6 +105,33 @@ const fetchMembers = async () => {
         range: `${SHEET_TAB}!A2:G`,
     });
     return (response.data.values || []).map(rowToMember);
+};
+
+// admin tab: A=username, B=password, C=display name (optional)
+const fetchAdminDirectory = async () => {
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'admin!A2:C',
+    });
+    return (response.data.values || []).map(row => ({
+        username: (row[0] || '').trim(),
+        password: (row[1] || '').trim(),
+        name: (row[2] || '').trim()
+    }));
+};
+
+// super_admin tab: A=Mobile Number, B=display name (optional). Logging in with this
+// number (as both username and password, same convention as mentors) grants
+// read-only visibility across every zone/unit/mentor — no call-status write access.
+const fetchSuperAdminDirectory = async () => {
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'super_admin!A2:B',
+    });
+    return (response.data.values || []).map(row => ({
+        mobile: (row[0] || '').trim(),
+        name: (row[1] || '').trim()
+    }));
 };
 
 // --- Routes ---
@@ -127,9 +166,10 @@ app.post('/api/call-status', authenticateToken, async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Person not found in the list' });
         }
 
-        // 3. Mentors may only update their own assignments
+        // 3. Mentors may only update their own assignments; viewers are read-only
         const rowMentor = (rows[rowIndex][6] || '').trim();
-        if (req.user.role !== 'super-admin' && rowMentor !== req.user.username) {
+        const canWrite = req.user.role === 'super-admin' || (req.user.role !== 'viewer' && rowMentor === req.user.username);
+        if (!canWrite) {
             return res.status(403).json({ status: 'error', message: 'Not assigned to you' });
         }
 
@@ -196,6 +236,7 @@ app.post('/api/config/message', authenticateToken, async (req, res) => {
 // Admin credentials from .env
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || process.env.ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Admin';
 
 // 4. POST /api/auth/login - Admin / mentor login
 app.post('/api/auth/login', async (req, res) => {
@@ -204,43 +245,57 @@ app.post('/api/auth/login', async (req, res) => {
     try {
         // 1. Check Master Admin (from .env)
         if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-            const token = generateToken({ username, role: 'super-admin' });
+            const name = ADMIN_NAME;
+            const token = generateToken({ username, role: 'super-admin', name });
             return res.json({
                 success: true,
                 token,
-                user: { username, role: 'super-admin' }
+                user: { username, role: 'super-admin', name }
             });
         }
 
-        // 2. Check Sheet Admins (mentors)
+        // 2. Check the mentor tab and the super_admin tab together — a number can be
+        // in both (an active mentor who also gets org-wide report oversight)
+        let mentorMatch = null;
+        let orgViewerMatch = null;
+
         try {
-            const response = await sheets.spreadsheets.values.get({
-                spreadsheetId: SPREADSHEET_ID,
-                range: 'admin!A2:B',
-            });
-
-            const rows = response.data.values || [];
-
-            // Find matching user
-            const adminUser = rows.find(row => {
-                const sheetUsername = (row[0] || '').trim();
-                const sheetPassword = (row[1] || '').trim(); // Plain text as requested
-                return sheetUsername === username && sheetPassword === password;
-            });
-
-            if (adminUser) {
-                const token = generateToken({ username: (adminUser[0] || '').trim(), role: 'admin' });
-                return res.json({
-                    success: true,
-                    token,
-                    user: { username: (adminUser[0] || '').trim(), role: 'admin' }
-                });
-            }
-
+            const directory = await fetchAdminDirectory();
+            mentorMatch = directory.find(a => a.username === username && a.password === password) || null;
         } catch (sheetError) {
             console.error('Error fetching admin sheet:', sheetError);
-            // Don't fail the whole request, just log it.
-            // If master admin failed and sheet fetch failed, we return invalid credentials below.
+        }
+
+        try {
+            const superAdmins = await fetchSuperAdminDirectory();
+            orgViewerMatch = superAdmins.find(s => s.mobile === username && username === password) || null;
+        } catch (superAdminError) {
+            // The super_admin tab is optional — missing tab shouldn't break login for everyone else
+            console.error('Error fetching super_admin sheet:', superAdminError);
+        }
+
+        if (mentorMatch) {
+            // Mentor identity wins (keeps full calling/write access); orgViewer adds
+            // the extra org-wide report view on top without changing their role
+            const name = mentorMatch.name || orgViewerMatch?.name || mentorMatch.username;
+            const orgViewer = !!orgViewerMatch;
+            const token = generateToken({ username: mentorMatch.username, role: 'admin', name, orgViewer });
+            return res.json({
+                success: true,
+                token,
+                user: { username: mentorMatch.username, role: 'admin', name, orgViewer }
+            });
+        }
+
+        if (orgViewerMatch) {
+            // Read-only org-wide viewer, not also a mentor
+            const name = orgViewerMatch.name || orgViewerMatch.mobile;
+            const token = generateToken({ username: orgViewerMatch.mobile, role: 'viewer', name, orgViewer: true });
+            return res.json({
+                success: true,
+                token,
+                user: { username: orgViewerMatch.mobile, role: 'viewer', name, orgViewer: true }
+            });
         }
 
         res.status(401).json({ success: false, error: 'Invalid credentials' });
@@ -254,7 +309,9 @@ app.post('/api/auth/login', async (req, res) => {
 // 5. GET /api/dashboard/zones - Zones with units and call progress (Protected, mentor-scoped)
 app.get('/api/dashboard/zones', authenticateToken, async (req, res) => {
     try {
-        const members = (await fetchMembers()).filter(m => visibleToUser(m, req.user));
+        const seeAll = req.user.role === 'super-admin' || req.user.role === 'viewer' ||
+            (req.user.orgViewer && req.query.all === 'true');
+        const members = (await fetchMembers()).filter(m => seeAll || m.mentor === req.user.username);
 
         const zoneMap = {};
         members.forEach(m => {
@@ -296,6 +353,10 @@ app.get('/api/dashboard/members', authenticateToken, async (req, res) => {
             members = members.filter(m => m.unit.toLowerCase() === unit.toLowerCase());
         }
 
+        const directory = await fetchAdminDirectory();
+        const nameByUsername = Object.fromEntries(directory.map(a => [a.username, a.name]));
+        members = members.map(m => ({ ...m, mentorName: nameByUsername[m.mentor] || '' }));
+
         res.json({ members });
     } catch (error) {
         console.error('Error fetching members:', error);
@@ -306,7 +367,19 @@ app.get('/api/dashboard/members', authenticateToken, async (req, res) => {
 // 7. GET /api/report - Call-completion report (Protected, mentor-scoped)
 app.get('/api/report', authenticateToken, async (req, res) => {
     try {
-        const members = (await fetchMembers()).filter(m => visibleToUser(m, req.user));
+        const { zone, unit, all } = req.query;
+        // A mentor who is also listed in the super_admin tab (orgViewer) can request
+        // the org-wide report with ?all=true, without losing their normal mentor scope elsewhere
+        const seeAll = req.user.role === 'super-admin' || req.user.role === 'viewer' ||
+            (req.user.orgViewer && all === 'true');
+        let members = (await fetchMembers()).filter(m => seeAll || m.mentor === req.user.username);
+
+        if (zone && zone !== 'all') {
+            members = members.filter(m => m.zone.toLowerCase() === zone.toLowerCase());
+        }
+        if (unit && unit !== 'all') {
+            members = members.filter(m => m.unit.toLowerCase() === unit.toLowerCase());
+        }
 
         const pct = (called, total) => total > 0 ? parseFloat(((called / total) * 100).toFixed(1)) : 0;
 
@@ -329,19 +402,32 @@ app.get('/api/report', authenticateToken, async (req, res) => {
             .map(([zone, s]) => ({ zone, total: s.total, called: s.called, percent: pct(s.called, s.total) }))
             .sort((a, b) => a.zone.localeCompare(b.zone));
 
+        const directory = await fetchAdminDirectory();
+        const nameByUsername = Object.fromEntries(directory.map(a => [a.username, a.name]));
+
+        const byStatus = CALL_STATUS_OPTIONS.map(opt => ({
+            value: opt.value,
+            label: opt.label,
+            count: members.filter(m => (m.callStatus || '') === opt.value).length
+        }));
+
         const result = {
             overall: { total, called, remaining: total - called, percent: pct(called, total) },
+            byStatus,
             byZone,
             pending: members
                 .filter(m => !m.callStatus)
-                .map(({ zone, unit, name, mobile, mentor }) => ({ zone, unit, name, mobile, mentor }))
+                .map(({ zone, unit, name, mobile, mentor }) => ({ zone, unit, name, mobile, mentor, mentorName: nameByUsername[mentor] || '' })),
+            completed: members
+                .filter(m => m.callStatus)
+                .map(({ zone, unit, name, mobile, mentor, callStatus, callRemarks }) => ({ zone, unit, name, mobile, mentor, mentorName: nameByUsername[mentor] || '', callStatus, callRemarks }))
         };
 
-        // Per-mentor breakdown only for the master admin
-        if (req.user.role === 'super-admin') {
+        // Per-mentor breakdown whenever the org-wide view is active
+        if (seeAll) {
             result.byMentor = Object.entries(groupStats(m => m.mentor))
-                .map(([mentor, s]) => ({ mentor, total: s.total, called: s.called, percent: pct(s.called, s.total) }))
-                .sort((a, b) => a.mentor.localeCompare(b.mentor));
+                .map(([mentor, s]) => ({ mentor, mentorName: nameByUsername[mentor] || '', total: s.total, called: s.called, percent: pct(s.called, s.total) }))
+                .sort((a, b) => (a.mentorName || a.mentor).localeCompare(b.mentorName || b.mentor));
         }
 
         res.json(result);

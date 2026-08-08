@@ -48,6 +48,14 @@ function AppRoutes() {
                     </ProtectedRoute>
                 }
             />
+            <Route
+                path="/admin-report"
+                element={
+                    <ProtectedRoute>
+                        <ReportPage orgWide />
+                    </ProtectedRoute>
+                }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
     );

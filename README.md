@@ -19,7 +19,8 @@ Standalone call-campaign app extracted from the Tharbiya registration project. M
    - People from **row 2** down: fill Zone, Unit, Name, Mobile Number, and Mentor. Leave E/F blank — the app writes the call status to **E** and the free-text response to **F**.
    - **Mentor** (G) must exactly match a username in the `admin` tab. A mentor who logs in sees only the rows assigned to them; the master admin (env credentials) sees everyone.
    - Cell **`S1`** holds the default WhatsApp message (can be set from the app), **`T1`** an optional image URL.
-4. Create a tab named **`admin`** with headers `username` (A1) / `password` (B1), and one row per mentor from row 2 (plain text).
+4. Create a tab named **`admin`** with headers `username` (A1) / `password` (B1) / `name` (C1, optional), and one row per mentor from row 2 (plain text). The **name** column is shown in the app header and reports instead of the raw username; if left blank, the username is shown.
+5. (Optional) Create a tab named **`super_admin`** with headers `Mobile Number` (A1) / `Name` (B1, optional), one row per overseer. Anyone whose number is listed here logs in (mobile number as both username and password, same as mentors) with **read-only, org-wide access**: they land straight on the Report page, see every zone/unit/mentor (no scoping), get the zone/unit filters and per-mentor WhatsApp reminder button, but cannot edit any call status.
 
 ## Backend
 
@@ -30,7 +31,7 @@ npm install
 node app.js            # runs on port 5001
 ```
 
-`.env` values: `SPREADSHEET_ID` (the new sheet), `SHEET_TAB` (data tab name, default `Sheet1`), `GOOGLE_AUTH_EMAIL`, `GOOGLE_AUTH_PRIVATE_KEY`, `JWT_SECRET` (fresh value — don't reuse another app's), `ADMIN_USERNAME`, `ADMIN_PASSWORD`.
+`.env` values: `SPREADSHEET_ID` (the new sheet), `SHEET_TAB` (data tab name, default `Sheet1`), `GOOGLE_AUTH_EMAIL`, `GOOGLE_AUTH_PRIVATE_KEY`, `JWT_SECRET` (fresh value — don't reuse another app's), `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_NAME` (optional, defaults to `Admin`).
 
 ## Frontend
 
