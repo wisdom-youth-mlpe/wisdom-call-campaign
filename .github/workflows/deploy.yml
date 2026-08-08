@@ -6,6 +6,9 @@
 #   - SSH_PRIVATE_KEY: SSH private key
 #   - SSH_PORT: SSH port (usually 22)
 #   - GHCR_TOKEN: GitHub Container Registry token
+#
+# The server also needs /srv/apps/wisdom-call-campaign/.env created manually
+# (see backend/.env.example) — this workflow does not generate it.
 
 name: Build and Deploy
 
