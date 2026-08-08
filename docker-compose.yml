@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/fahizkp/wisdom-call-campaign-backend:latest
+    image: ghcr.io/wisdom-youth-mlpe/wisdom-call-campaign-backend:latest
     container_name: wisdom-call-backend
     restart: unless-stopped
     env_file:
@@ -21,7 +21,7 @@ services:
       - "traefik.http.services.wisdom-call-backend.loadbalancer.server.port=5001"
 
   frontend:
-    image: ghcr.io/fahizkp/wisdom-call-campaign-frontend:latest
+    image: ghcr.io/wisdom-youth-mlpe/wisdom-call-campaign-frontend:latest
     container_name: wisdom-call-frontend
     restart: unless-stopped
     depends_on:

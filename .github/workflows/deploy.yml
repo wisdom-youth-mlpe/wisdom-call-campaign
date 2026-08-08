@@ -19,8 +19,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_FRONTEND: fahizkp/wisdom-call-campaign-frontend
-  IMAGE_NAME_API: fahizkp/wisdom-call-campaign-backend
+  IMAGE_NAME_FRONTEND: wisdom-youth-mlpe/wisdom-call-campaign-frontend
+  IMAGE_NAME_API: wisdom-youth-mlpe/wisdom-call-campaign-backend
 
 jobs:
   build-and-push:
@@ -123,8 +123,8 @@ jobs:
             echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u fahizkp --password-stdin
 
             # Pull latest images
-            docker pull ghcr.io/fahizkp/wisdom-call-campaign-frontend:latest
-            docker pull ghcr.io/fahizkp/wisdom-call-campaign-backend:latest
+            docker pull ghcr.io/wisdom-youth-mlpe/wisdom-call-campaign-frontend:latest
+            docker pull ghcr.io/wisdom-youth-mlpe/wisdom-call-campaign-backend:latest
 
             # Stop and remove old containers if exist
             docker rm -f wisdom-call-backend wisdom-call-frontend || true
