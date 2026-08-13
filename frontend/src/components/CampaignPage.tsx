@@ -54,6 +54,21 @@ const getTileStyle = (callStatus?: string): React.CSSProperties => {
     return { background: '#fffbeb', border: '1px solid #fcd34d' };
 };
 
+// Per-person status update, meant to be pasted into a WhatsApp group (as opposed to
+// the "💬 WhatsApp" button below, which opens a 1:1 chat with the member themselves)
+function buildMemberShareMessage(member: Member): string {
+    const statusInfo = CALL_STATUS_OPTIONS.find(o => o.value === member.callStatus);
+    const icon = getCallStatusIcon(member.callStatus)?.icon || '🔵';
+    const statusLabel = member.callStatus ? (statusInfo?.label || member.callStatus) : 'വിളിക്കാൻ ബാക്കി';
+
+    let msg = `👤 ${member.name}\n`;
+    msg += `📍 ${member.unit ? `${member.unit}, ` : ''}${member.zone}\n`;
+    if (member.mobile) msg += `📞 ${member.mobile}\n`;
+    msg += `${icon} ${statusLabel}`;
+    if (member.callRemarks) msg += `\n📝 ${member.callRemarks}`;
+    return msg;
+}
+
 export default function CampaignPage() {
     const { token, logout, user, isLoading } = useAuth();
     const navigate = useNavigate();
@@ -551,6 +566,21 @@ export default function CampaignPage() {
                                             <span style={{ color: '#999', fontSize: '14px', fontStyle: 'italic' }}>No Number Available</span>
                                         )}
                                     </div>
+
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await navigator.clipboard.writeText(buildMemberShareMessage(member));
+                                                alert('Copied! Paste it into the WhatsApp group.');
+                                            } catch {
+                                                alert('Failed to copy. Please copy manually.');
+                                            }
+                                        }}
+                                        className="action-btn"
+                                        style={{ background: 'transparent', color: '#334155', border: '1px solid #cbd5e1', width: '100%', marginTop: '10px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}
+                                    >
+                                        📋 Copy for Group
+                                    </button>
                                 </div>
                             ))}
                         </div>
