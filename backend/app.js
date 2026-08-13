@@ -27,7 +27,8 @@ app.use(bodyParser.json());
 // User must provide valid credentials in .env or service-account.json
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const GOOGLE_AUTH_EMAIL = process.env.GOOGLE_AUTH_EMAIL;
-// Data tab name; columns: A=Zone, B=Unit, C=Name, D=Mobile, E=Call status, F=Call response, G=Mentor
+// Data tab name; columns: A=Zone, B=Unit, C=Name, D=Mobile, E=Call status, F=Call response,
+// G=Mentor, H=Present (checkin), I=Peace Radio (checkin), J=Zameel (checkin)
 const SHEET_TAB = process.env.SHEET_TAB || 'ExecutiveList';
 
 // Robust parsing for the private key
@@ -88,6 +89,15 @@ const rowToMember = (row) => ({
 const visibleToUser = (member, user) =>
     user.role === 'super-admin' || user.role === 'viewer' || member.mentor === user.username;
 
+// Event check-in is master-admin only — stricter than every other route, which
+// blend super-admin/viewer/orgViewer. No mentor or org-viewer gets check-in access.
+const requireSuperAdmin = (req, res, next) => {
+    if (req.user.role !== 'super-admin') {
+        return res.status(403).json({ error: 'Super admin only' });
+    }
+    next();
+};
+
 // Call status values written to Col E, mirrored from the frontend's CALL_STATUS_OPTIONS
 const CALL_STATUS_OPTIONS = [
     { value: '', label: 'Not Called Yet' },
@@ -105,6 +115,25 @@ const fetchMembers = async () => {
         range: `${SHEET_TAB}!A2:G`,
     });
     return (response.data.values || []).map(rowToMember);
+};
+
+// Event day check-in — reads the same data tab plus columns H/I/J (Present /
+// Peace Radio / Zameel, each "Yes"/"No"). Separate from fetchMembers/rowToMember
+// since this data is only ever shown on the super-admin-only check-in pages.
+const fetchCheckinMembers = async () => {
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_TAB}!A2:J`,
+    });
+    return (response.data.values || []).map(row => ({
+        zone: (row[0] || '').trim(),
+        unit: (row[1] || '').trim(),
+        name: (row[2] || '').trim(),
+        mobile: (row[3] || '').trim(),
+        present: (row[7] || '').trim() === 'Yes',
+        peaceRadio: (row[8] || '').trim() === 'Yes',
+        zameel: (row[9] || '').trim() === 'Yes'
+    }));
 };
 
 // admin tab: A=username, B=password, C=display name (optional)
@@ -434,6 +463,129 @@ app.get('/api/report', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error building report:', error);
         res.status(500).json({ error: 'Failed to build report' });
+    }
+});
+
+// 8. GET /api/checkin/members - Event day check-in list with filtering (Protected, super-admin only)
+app.get('/api/checkin/members', authenticateToken, requireSuperAdmin, async (req, res) => {
+    try {
+        const { zone, unit } = req.query;
+        let members = await fetchCheckinMembers();
+
+        if (zone && zone !== 'all') {
+            members = members.filter(m => m.zone.toLowerCase() === zone.toLowerCase());
+        }
+        if (unit && unit !== 'all') {
+            members = members.filter(m => m.unit.toLowerCase() === unit.toLowerCase());
+        }
+
+        res.json({ members });
+    } catch (error) {
+        console.error('Error fetching checkin members:', error);
+        res.status(500).json({ error: 'Failed to fetch checkin members' });
+    }
+});
+
+// 9. POST /api/checkin - Update Present (Col H), Peace Radio (Col I), Zameel (Col J) (Protected, super-admin only)
+app.post('/api/checkin', authenticateToken, requireSuperAdmin, async (req, res) => {
+    console.log("Received checkin update request", req.body);
+    const { zone, unit, name, present, peaceRadio, zameel } = req.body;
+
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_TAB}!A2:C`,
+        });
+
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'No data found in sheet' });
+        }
+
+        const norm = (v) => (v || '').trim().toLowerCase();
+        const rowIndex = rows.findIndex(row =>
+            norm(row[0]) === norm(zone) &&
+            norm(row[1]) === norm(unit) &&
+            norm(row[2]) === norm(name)
+        );
+
+        if (rowIndex === -1) {
+            console.error(`Person not found: ${zone} / ${unit} - ${name}`);
+            return res.status(404).json({ status: 'error', message: 'Person not found in the list' });
+        }
+
+        const exactRowNumber = rowIndex + 2;
+        const updateRange = `${SHEET_TAB}!H${exactRowNumber}:J${exactRowNumber}`;
+
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: updateRange,
+            valueInputOption: 'USER_ENTERED',
+            resource: {
+                values: [[present ? 'Yes' : 'No', peaceRadio ? 'Yes' : 'No', zameel ? 'Yes' : 'No']]
+            },
+        });
+
+        console.log(`Successfully updated checkin for row ${exactRowNumber}`);
+        res.json({ status: 'success' });
+    } catch (error) {
+        console.error('Error updating checkin:', error);
+        res.status(500).json({ status: 'error', message: 'Error updating checkin: ' + error.message });
+    }
+});
+
+// 10. GET /api/checkin/report - Event day check-in report (Protected, super-admin only)
+app.get('/api/checkin/report', authenticateToken, requireSuperAdmin, async (req, res) => {
+    try {
+        const { zone, unit } = req.query;
+        let members = await fetchCheckinMembers();
+
+        if (zone && zone !== 'all') {
+            members = members.filter(m => m.zone.toLowerCase() === zone.toLowerCase());
+        }
+        if (unit && unit !== 'all') {
+            members = members.filter(m => m.unit.toLowerCase() === unit.toLowerCase());
+        }
+
+        const pct = (present, total) => total > 0 ? parseFloat(((present / total) * 100).toFixed(1)) : 0;
+
+        const total = members.length;
+        const present = members.filter(m => m.present).length;
+        const peaceRadioCount = members.filter(m => m.peaceRadio).length;
+        const zameelCount = members.filter(m => m.zameel).length;
+
+        const byZoneMap = {};
+        const byUnitMap = {};
+        members.forEach(m => {
+            if (!m.zone) return;
+            if (!byZoneMap[m.zone]) byZoneMap[m.zone] = { total: 0, present: 0 };
+            byZoneMap[m.zone].total++;
+            if (m.present) byZoneMap[m.zone].present++;
+
+            const unitKey = `${m.zone}|||${m.unit}`;
+            if (m.unit) {
+                if (!byUnitMap[unitKey]) byUnitMap[unitKey] = { zone: m.zone, unit: m.unit, total: 0, present: 0 };
+                byUnitMap[unitKey].total++;
+                if (m.present) byUnitMap[unitKey].present++;
+            }
+        });
+
+        const byZone = Object.entries(byZoneMap)
+            .map(([zone, s]) => ({ zone, present: s.present, total: s.total, percent: pct(s.present, s.total) }))
+            .sort((a, b) => a.zone.localeCompare(b.zone));
+
+        const byUnit = Object.values(byUnitMap)
+            .map(s => ({ zone: s.zone, unit: s.unit, present: s.present, total: s.total, percent: pct(s.present, s.total) }))
+            .sort((a, b) => a.zone.localeCompare(b.zone) || a.unit.localeCompare(b.unit));
+
+        res.json({
+            overall: { total, present, percent: pct(present, total), peaceRadioCount, zameelCount },
+            byZone,
+            byUnit
+        });
+    } catch (error) {
+        console.error('Error building checkin report:', error);
+        res.status(500).json({ error: 'Failed to build checkin report' });
     }
 });
 

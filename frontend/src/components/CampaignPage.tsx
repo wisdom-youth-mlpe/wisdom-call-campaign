@@ -250,6 +250,15 @@ export default function CampaignPage() {
                             👑
                         </button>
                     )}
+                    {user?.role === 'super-admin' && (
+                        <button
+                            className="header-btn"
+                            onClick={() => navigate('/checkin')}
+                            title="Event Check-in"
+                        >
+                            🧾
+                        </button>
+                    )}
                     <button
                         className="header-btn"
                         onClick={() => setTemplateOpen(!templateOpen)}

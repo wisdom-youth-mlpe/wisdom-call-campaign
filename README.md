@@ -1,6 +1,6 @@
 # Wisdom Call Campaign
 
-Standalone call-campaign app extracted from the Tharbiya registration project. Mentors log in and see the people assigned to them, dial via tap-to-call, record a call status (6 Malayalam options) with an optional response note, and send/copy WhatsApp messages. A report page shows completion percentage and who is left. All data lives in a Google Sheet — no database.
+Standalone call-campaign app extracted from the Tharbiya registration project. Mentors log in and see the people assigned to them, dial via tap-to-call, record a call status (6 Malayalam options) with an optional response note, and send/copy WhatsApp messages. A report page shows completion percentage and who is left. A separate, super-admin-only **event check-in** section lets the master admin search/filter attendees on event day, toggle Present / Peace Radio / Zameel per person, and view a live zone/unit attendance report with a WhatsApp-shareable summary. All data lives in a Google Sheet — no database.
 
 - **Frontend:** React (CRA), mobile-first UI → `frontend/`
 - **Backend:** Express + Google Sheets API → `backend/`
@@ -12,12 +12,13 @@ Standalone call-campaign app extracted from the Tharbiya registration project. M
 2. Share it as **Editor** with the service-account email (the `GOOGLE_AUTH_EMAIL` value).
 3. Data tab (name it whatever you like and set `SHEET_TAB` in `.env`; default `Sheet1`) with this header row:
 
-   | A | B | C | D | E | F | G |
-   |---|---|---|---|---|---|---|
-   | Zone | Unit | Name | Mobile Number | Call status | Call response | Mentor |
+   | A | B | C | D | E | F | G | H | I | J |
+   |---|---|---|---|---|---|---|---|---|---|
+   | Zone | Unit | Name | Mobile Number | Call status | Call response | Mentor | Present | Peace Radio | Zameel |
 
    - People from **row 2** down: fill Zone, Unit, Name, Mobile Number, and Mentor. Leave E/F blank — the app writes the call status to **E** and the free-text response to **F**.
    - **Mentor** (G) must exactly match a username in the `admin` tab. A mentor who logs in sees only the rows assigned to them; the master admin (env credentials) sees everyone.
+   - Leave **H/I/J** blank — the super-admin-only check-in page writes `Yes`/`No` to them (Present / Peace Radio installed / Zameel installed) as each toggle is used on event day. Blank is treated as "No"/not checked in.
    - Cell **`S1`** holds the default WhatsApp message (can be set from the app), **`T1`** an optional image URL.
 4. Create a tab named **`admin`** with headers `username` (A1) / `password` (B1) / `name` (C1, optional), and one row per mentor from row 2 (plain text). The **name** column is shown in the app header and reports instead of the raw username; if left blank, the username is shown.
 5. (Optional) Create a tab named **`super_admin`** with headers `Mobile Number` (A1) / `Name` (B1, optional), one row per overseer. Anyone whose number is listed here logs in (mobile number as both username and password, same as mentors) with **read-only, org-wide access**: they land straight on the Report page, see every zone/unit/mentor (no scoping), get the zone/unit filters and per-mentor WhatsApp reminder button, but cannot edit any call status.
@@ -45,7 +46,7 @@ Production builds bake `REACT_APP_API_URL` at build time (set to `https://calls.
 
 ## Deployment
 
-Push to `main` → `.github/workflows/deploy.yml` builds and pushes `ghcr.io/fahizkp/wisdom-call-campaign-{frontend,backend}:latest`, then SSHes to the server and runs `docker compose up -d` in `/srv/apps/wisdom-call-campaign`.
+Push to `main` → `.github/workflows/deploy.yml` builds and pushes `ghcr.io/wisdom-youth-mlpe/wisdom-call-campaign-{frontend,backend}:latest`, then SSHes to the server and runs `docker compose up -d` in `/srv/apps/wisdom-call-campaign`.
 
 One-time setup:
 

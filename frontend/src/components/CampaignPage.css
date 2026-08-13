@@ -366,6 +366,53 @@
     font-weight: 600;
 }
 
+/* Check-in toggle switches */
+.checkin-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 6px 0;
+}
+
+.checkin-toggle-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #444;
+}
+
+.toggle-track {
+    display: inline-block;
+    position: relative;
+    width: 48px;
+    height: 28px;
+    border-radius: 999px;
+    background: #d1d5db;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+}
+
+.toggle-track--on {
+    background: #22c55e;
+}
+
+.toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+}
+
+.toggle-track--on .toggle-thumb {
+    transform: translateX(20px);
+}
+
 /* Larger screens */
 @media (min-width: 768px) {
     .campaign-header {

@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import CampaignPage from './components/CampaignPage';
 import ReportPage from './components/ReportPage';
+import CheckinPage from './components/CheckinPage';
+import CheckinReportPage from './components/CheckinReportPage';
 import './App.css';
 
 
@@ -53,6 +55,22 @@ function AppRoutes() {
                 element={
                     <ProtectedRoute>
                         <ReportPage orgWide />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/checkin"
+                element={
+                    <ProtectedRoute>
+                        <CheckinPage />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/checkin-report"
+                element={
+                    <ProtectedRoute>
+                        <CheckinReportPage />
                     </ProtectedRoute>
                 }
             />

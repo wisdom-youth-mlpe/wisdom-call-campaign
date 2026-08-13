@@ -203,6 +203,11 @@ export default function ReportPage({ orgWide = false }: { orgWide?: boolean }) {
                             👑
                         </button>
                     )}
+                    {user?.role === 'super-admin' && (
+                        <button className="header-btn" onClick={() => navigate('/checkin')} title="Event Check-in">
+                            🧾
+                        </button>
+                    )}
                     {user?.role !== 'viewer' && (
                         <button className="header-btn" onClick={() => navigate('/')} title="Call Campaign">
                             📞
