@@ -105,6 +105,8 @@ export default function ReportPage({ orgWide = false }: { orgWide?: boolean }) {
     // Shows the "👑 Super Admin" entry point: a mentor who is also listed in the super_admin
     // tab, viewing their own (non-org-wide) report — pure viewers already see everything by default
     const showSuperAdminLink = !orgWide && user?.role !== 'viewer' && !!user?.orgViewer;
+    // Master admin, org-wide viewers (super_admin tab), and dual-listed mentors (orgViewer)
+    const canAccessCheckin = user?.role === 'super-admin' || user?.role === 'viewer' || !!user?.orgViewer;
     const displayName = user?.name || user?.username || '';
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
     const allParam = orgWide ? '&all=true' : '';
@@ -203,7 +205,7 @@ export default function ReportPage({ orgWide = false }: { orgWide?: boolean }) {
                             👑
                         </button>
                     )}
-                    {user?.role === 'super-admin' && (
+                    {canAccessCheckin && (
                         <button className="header-btn" onClick={() => navigate('/checkin')} title="Event Check-in">
                             🧾
                         </button>

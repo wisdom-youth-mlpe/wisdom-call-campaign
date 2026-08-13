@@ -89,11 +89,13 @@ const rowToMember = (row) => ({
 const visibleToUser = (member, user) =>
     user.role === 'super-admin' || user.role === 'viewer' || member.mentor === user.username;
 
-// Event check-in is master-admin only — stricter than every other route, which
-// blend super-admin/viewer/orgViewer. No mentor or org-viewer gets check-in access.
-const requireSuperAdmin = (req, res, next) => {
-    if (req.user.role !== 'super-admin') {
-        return res.status(403).json({ error: 'Super admin only' });
+// Event check-in access: the master admin, org-wide viewers (super_admin tab),
+// and mentors who are dual-listed there (orgViewer flag). Regular mentors are
+// still locked out — same blend as visibleToUser/seeAll elsewhere in the app.
+const requireCheckinAccess = (req, res, next) => {
+    const allowed = req.user.role === 'super-admin' || req.user.role === 'viewer' || !!req.user.orgViewer;
+    if (!allowed) {
+        return res.status(403).json({ error: 'Check-in access required' });
     }
     next();
 };
@@ -467,7 +469,7 @@ app.get('/api/report', authenticateToken, async (req, res) => {
 });
 
 // 8. GET /api/checkin/members - Event day check-in list with filtering (Protected, super-admin only)
-app.get('/api/checkin/members', authenticateToken, requireSuperAdmin, async (req, res) => {
+app.get('/api/checkin/members', authenticateToken, requireCheckinAccess, async (req, res) => {
     try {
         const { zone, unit } = req.query;
         let members = await fetchCheckinMembers();
@@ -487,7 +489,7 @@ app.get('/api/checkin/members', authenticateToken, requireSuperAdmin, async (req
 });
 
 // 9. POST /api/checkin - Update Present (Col H), Peace Radio (Col I), Zameel (Col J) (Protected, super-admin only)
-app.post('/api/checkin', authenticateToken, requireSuperAdmin, async (req, res) => {
+app.post('/api/checkin', authenticateToken, requireCheckinAccess, async (req, res) => {
     console.log("Received checkin update request", req.body);
     const { zone, unit, name, present, peaceRadio, zameel } = req.body;
 
@@ -535,7 +537,7 @@ app.post('/api/checkin', authenticateToken, requireSuperAdmin, async (req, res) 
 });
 
 // 10. GET /api/checkin/report - Event day check-in report (Protected, super-admin only)
-app.get('/api/checkin/report', authenticateToken, requireSuperAdmin, async (req, res) => {
+app.get('/api/checkin/report', authenticateToken, requireCheckinAccess, async (req, res) => {
     try {
         const { zone, unit } = req.query;
         let members = await fetchCheckinMembers();

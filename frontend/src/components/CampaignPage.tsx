@@ -91,6 +91,8 @@ export default function CampaignPage() {
     const [templateOpen, setTemplateOpen] = useState(false);
 
     const canSeeAllMentors = user?.role === 'super-admin' || user?.role === 'viewer';
+    // Master admin, org-wide viewers (super_admin tab), and dual-listed mentors (orgViewer)
+    const canAccessCheckin = user?.role === 'super-admin' || user?.role === 'viewer' || !!user?.orgViewer;
     const displayName = user?.name || user?.username || '';
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
@@ -271,7 +273,7 @@ export default function CampaignPage() {
                             👑
                         </button>
                     )}
-                    {user?.role === 'super-admin' && (
+                    {canAccessCheckin && (
                         <button
                             className="header-btn"
                             onClick={() => navigate('/checkin')}

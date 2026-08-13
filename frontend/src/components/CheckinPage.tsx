@@ -47,21 +47,23 @@ export default function CheckinPage() {
     const [loading, setLoading] = useState(true);
 
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+    // Master admin, org-wide viewers (super_admin tab), and dual-listed mentors (orgViewer)
+    const canAccessCheckin = user?.role === 'super-admin' || user?.role === 'viewer' || !!user?.orgViewer;
 
-    // Super-admin only — everyone else is bounced back to the campaign page
+    // Everyone else is bounced back to the campaign page
     useEffect(() => {
         if (isLoading) return;
         if (!token) {
             navigate('/login');
             return;
         }
-        if (user?.role !== 'super-admin') {
+        if (!canAccessCheckin) {
             navigate('/');
         }
-    }, [isLoading, token, user, navigate]);
+    }, [isLoading, token, canAccessCheckin, navigate]);
 
     useEffect(() => {
-        if (isLoading || !token || user?.role !== 'super-admin') return;
+        if (isLoading || !token || !canAccessCheckin) return;
         const fetchZones = async () => {
             try {
                 const response = await fetch(`${backendUrl}/api/dashboard/zones`, {
@@ -75,10 +77,10 @@ export default function CheckinPage() {
             }
         };
         fetchZones();
-    }, [isLoading, token, user, backendUrl]);
+    }, [isLoading, token, canAccessCheckin, backendUrl]);
 
     useEffect(() => {
-        if (isLoading || !token || user?.role !== 'super-admin') return;
+        if (isLoading || !token || !canAccessCheckin) return;
         const fetchMembers = async () => {
             try {
                 const url = `${backendUrl}/api/checkin/members?zone=${encodeURIComponent(selectedZone)}&unit=${encodeURIComponent(selectedUnit)}`;
@@ -95,7 +97,7 @@ export default function CheckinPage() {
             }
         };
         fetchMembers();
-    }, [isLoading, token, user, selectedZone, selectedUnit, backendUrl]);
+    }, [isLoading, token, canAccessCheckin, selectedZone, selectedUnit, backendUrl]);
 
     const updateCheckin = async (member: CheckinMember, updates: Partial<Pick<CheckinMember, 'present' | 'peaceRadio' | 'zameel'>>) => {
         const next = { ...member, ...updates };
@@ -129,7 +131,7 @@ export default function CheckinPage() {
         navigate('/login');
     };
 
-    if (isLoading || loading || user?.role !== 'super-admin') {
+    if (isLoading || loading || !canAccessCheckin) {
         return <div className="campaign-loading">Loading check-in...</div>;
     }
 

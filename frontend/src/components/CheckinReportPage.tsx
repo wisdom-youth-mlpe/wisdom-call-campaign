@@ -39,6 +39,8 @@ export default function CheckinReportPage() {
     const [loading, setLoading] = useState(true);
 
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+    // Master admin, org-wide viewers (super_admin tab), and dual-listed mentors (orgViewer)
+    const canAccessCheckin = user?.role === 'super-admin' || user?.role === 'viewer' || !!user?.orgViewer;
 
     useEffect(() => {
         if (isLoading) return;
@@ -46,13 +48,13 @@ export default function CheckinReportPage() {
             navigate('/login');
             return;
         }
-        if (user?.role !== 'super-admin') {
+        if (!canAccessCheckin) {
             navigate('/');
         }
-    }, [isLoading, token, user, navigate]);
+    }, [isLoading, token, canAccessCheckin, navigate]);
 
     useEffect(() => {
-        if (isLoading || !token || user?.role !== 'super-admin') return;
+        if (isLoading || !token || !canAccessCheckin) return;
         const fetchZones = async () => {
             try {
                 const response = await fetch(`${backendUrl}/api/dashboard/zones`, {
@@ -66,10 +68,10 @@ export default function CheckinReportPage() {
             }
         };
         fetchZones();
-    }, [isLoading, token, user, backendUrl]);
+    }, [isLoading, token, canAccessCheckin, backendUrl]);
 
     useEffect(() => {
-        if (isLoading || !token || user?.role !== 'super-admin') return;
+        if (isLoading || !token || !canAccessCheckin) return;
         const fetchReport = async () => {
             try {
                 const url = `${backendUrl}/api/checkin/report?zone=${encodeURIComponent(selectedZone)}&unit=${encodeURIComponent(selectedUnit)}`;
@@ -85,14 +87,14 @@ export default function CheckinReportPage() {
             }
         };
         fetchReport();
-    }, [isLoading, token, user, selectedZone, selectedUnit, backendUrl]);
+    }, [isLoading, token, canAccessCheckin, selectedZone, selectedUnit, backendUrl]);
 
     const handleLogout = () => {
         logout();
         navigate('/login');
     };
 
-    if (isLoading || loading || user?.role !== 'super-admin') {
+    if (isLoading || loading || !canAccessCheckin) {
         return <div className="campaign-loading">Loading check-in report...</div>;
     }
 
