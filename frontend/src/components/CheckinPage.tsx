@@ -215,7 +215,7 @@ export default function CheckinPage() {
                 </div>
 
                 {visibleMembers.length > 0 && (
-                    <div className="stat-tile-grid">
+                    <div className="stat-tile-grid stat-tile-grid--compact">
                         <div className="stat-tile stat-tile--neutral">
                             <div className="stat-tile-value">{visibleMembers.length}</div>
                             <div className="stat-tile-label">Total</div>
