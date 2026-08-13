@@ -69,7 +69,7 @@ function buildCallerReportMessage(displayName: string, called: number, total: nu
     }
     const percent = total > 0 ? Math.round((called / total) * 100) : 0;
 
-    return `📊 Calling Report\n\n` +
+    return `📊 Dist Council Calling Report\n\n` +
         `👤 ${displayName}\n` +
         `${statusEmoji} ${statusText}\n` +
         `📞 ${called}/${total} completed (${percent}%)`;
