@@ -148,7 +148,7 @@ export default function CheckinPage() {
     const presentPercent = visibleMembers.length > 0 ? Math.round((presentCount / visibleMembers.length) * 100) : 0;
 
     return (
-        <div className="campaign-page checkin-compact">
+        <div className="campaign-page">
             <header className="campaign-header">
                 <h1>🧾 Check-in</h1>
                 <div className="campaign-header-actions">
@@ -244,13 +244,13 @@ export default function CheckinPage() {
                                     className="member-card"
                                     style={member.present ? { background: '#f0fdf4', border: '1px solid #86efac' } : { background: 'white', border: '1px solid #eee' }}
                                 >
-                                    <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '2px' }}>
+                                    <div style={{ fontWeight: 700, fontSize: '18px', marginBottom: '5px' }}>
                                         {member.present ? '✅ ' : ''}{member.name}
                                     </div>
-                                    <div style={{ color: '#666', fontSize: '12px', marginBottom: '2px' }}>
+                                    <div style={{ color: '#666', fontSize: '14px', marginBottom: '5px' }}>
                                         {member.unit ? `${member.unit} · ${member.zone}` : member.zone}
                                     </div>
-                                    <div style={{ color: '#888', fontSize: '12px', marginBottom: '8px' }}>{member.mobile || 'No Mobile'}</div>
+                                    <div style={{ color: '#888', fontSize: '14px', marginBottom: '15px' }}>{member.mobile || 'No Mobile'}</div>
 
                                     <Toggle
                                         checked={member.present}
@@ -269,7 +269,7 @@ export default function CheckinPage() {
                                     />
 
                                     {member.mobile && (
-                                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                                             <a href={`tel:${member.mobile}`} className="action-btn" style={{ background: '#3B82F6' }}>
                                                 📞 Call
                                             </a>
