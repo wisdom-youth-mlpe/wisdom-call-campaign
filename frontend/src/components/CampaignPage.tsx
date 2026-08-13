@@ -54,19 +54,25 @@ const getTileStyle = (callStatus?: string): React.CSSProperties => {
     return { background: '#fffbeb', border: '1px solid #fcd34d' };
 };
 
-// Per-person status update, meant to be pasted into a WhatsApp group (as opposed to
-// the "💬 WhatsApp" button below, which opens a 1:1 chat with the member themselves)
-function buildMemberShareMessage(member: Member): string {
-    const statusInfo = CALL_STATUS_OPTIONS.find(o => o.value === member.callStatus);
-    const icon = getCallStatusIcon(member.callStatus)?.icon || '🔵';
-    const statusLabel = member.callStatus ? (statusInfo?.label || member.callStatus) : 'വിളിക്കാൻ ബാക്കി';
+// The caller's own progress summary, meant to be pasted into the callers' WhatsApp
+// group (e.g. "3/6 done") — distinct from the per-contact "💬 WhatsApp" button below,
+// which opens a 1:1 chat with that specific member.
+function buildCallerReportMessage(displayName: string, called: number, total: number): string {
+    let statusEmoji = '😴';
+    let statusText = 'Not Started';
+    if (total > 0 && called === total) {
+        statusEmoji = '🎉';
+        statusText = 'Completed';
+    } else if (called > 0) {
+        statusEmoji = '💪';
+        statusText = 'Partially Completed';
+    }
+    const percent = total > 0 ? Math.round((called / total) * 100) : 0;
 
-    let msg = `👤 ${member.name}\n`;
-    msg += `📍 ${member.unit ? `${member.unit}, ` : ''}${member.zone}\n`;
-    if (member.mobile) msg += `📞 ${member.mobile}\n`;
-    msg += `${icon} ${statusLabel}`;
-    if (member.callRemarks) msg += `\n📝 ${member.callRemarks}`;
-    return msg;
+    return `📊 Calling Report\n\n` +
+        `👤 ${displayName}\n` +
+        `${statusEmoji} ${statusText}\n` +
+        `📞 ${called}/${total} completed (${percent}%)`;
 }
 
 export default function CampaignPage() {
@@ -408,6 +414,20 @@ export default function CampaignPage() {
                         <div className="progress-track">
                             <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
                         </div>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await navigator.clipboard.writeText(buildCallerReportMessage(displayName, calledCount, visibleMembers.length));
+                                    alert('Copied! Paste it into the WhatsApp group.');
+                                } catch {
+                                    alert('Failed to copy. Please copy manually.');
+                                }
+                            }}
+                            className="template-btn"
+                            style={{ background: '#25D366', color: 'white', border: 'none', marginTop: 12, width: '100%', boxShadow: '0 3px 10px rgba(37,211,102,0.3)' }}
+                        >
+                            📋 Copy Report
+                        </button>
                     </div>
                 )}
 
@@ -566,21 +586,6 @@ export default function CampaignPage() {
                                             <span style={{ color: '#999', fontSize: '14px', fontStyle: 'italic' }}>No Number Available</span>
                                         )}
                                     </div>
-
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                await navigator.clipboard.writeText(buildMemberShareMessage(member));
-                                                alert('Copied! Paste it into the WhatsApp group.');
-                                            } catch {
-                                                alert('Failed to copy. Please copy manually.');
-                                            }
-                                        }}
-                                        className="action-btn"
-                                        style={{ background: 'transparent', color: '#334155', border: '1px solid #cbd5e1', width: '100%', marginTop: '10px', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}
-                                    >
-                                        📋 Copy for Group
-                                    </button>
                                 </div>
                             ))}
                         </div>
