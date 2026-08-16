@@ -111,12 +111,15 @@ const CALL_STATUS_OPTIONS = [
     { value: 'mattullava', label: 'മറ്റുള്ളവ' }
 ];
 
+// Only used by the call campaign (zones/members/report) — a row with no mentor
+// was never assigned to be called, so it's excluded here. Check-in still sees
+// everyone via fetchCheckinMembers below, which has no such filter.
 const fetchMembers = async () => {
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${SHEET_TAB}!A2:G`,
     });
-    return (response.data.values || []).map(rowToMember);
+    return (response.data.values || []).map(rowToMember).filter(m => m.mentor);
 };
 
 // Event day check-in — reads the same data tab plus columns H/I/J (Present /
