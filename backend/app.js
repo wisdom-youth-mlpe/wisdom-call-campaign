@@ -536,6 +536,54 @@ app.post('/api/checkin', authenticateToken, requireCheckinAccess, async (req, re
     }
 });
 
+// 9b. POST /api/checkin/attendee - Add a new walk-in attendee, marked Present immediately (Protected, check-in access)
+app.post('/api/checkin/attendee', authenticateToken, requireCheckinAccess, async (req, res) => {
+    console.log("Received add-attendee request", req.body);
+    const zone = (req.body.zone || '').trim();
+    const unit = (req.body.unit || '').trim();
+    const name = (req.body.name || '').trim();
+    const mobile = (req.body.mobile || '').trim();
+
+    if (!zone || !name || !mobile) {
+        return res.status(400).json({ status: 'error', message: 'Zone, name, and mobile number are required' });
+    }
+
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_TAB}!A2:D`,
+        });
+        const rows = response.data.values || [];
+
+        // Guard against accidentally adding someone already in the list
+        const normMobile = mobile.replace(/\D/g, '');
+        const existing = rows.find(row => (row[3] || '').replace(/\D/g, '') === normMobile && normMobile);
+        if (existing) {
+            return res.status(409).json({
+                status: 'error',
+                message: `A person with this mobile number already exists: ${existing[2] || 'Unknown'} (${existing[0] || ''}/${existing[1] || ''})`
+            });
+        }
+
+        // A=Zone, B=Unit, C=Name, D=Mobile, E=CallStatus, F=CallResponse, G=Mentor, H=Present, I=PeaceRadio, J=Zameel
+        await sheets.spreadsheets.values.append({
+            spreadsheetId: SPREADSHEET_ID,
+            range: `${SHEET_TAB}!A:J`,
+            valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS',
+            resource: {
+                values: [[zone, unit, name, mobile, '', '', '', 'Yes', 'No', 'No']]
+            },
+        });
+
+        console.log(`Added new attendee: ${name} (${zone}/${unit})`);
+        res.json({ status: 'success' });
+    } catch (error) {
+        console.error('Error adding attendee:', error);
+        res.status(500).json({ status: 'error', message: 'Error adding attendee: ' + error.message });
+    }
+});
+
 // 10. GET /api/checkin/report - Event day check-in report (Protected, super-admin only)
 app.get('/api/checkin/report', authenticateToken, requireCheckinAccess, async (req, res) => {
     try {

@@ -45,6 +45,12 @@ export default function CheckinPage() {
     const [selectedUnit, setSelectedUnit] = useState<string>('all');
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [addFormOpen, setAddFormOpen] = useState(false);
+    const [newZone, setNewZone] = useState('');
+    const [newUnit, setNewUnit] = useState('');
+    const [newName, setNewName] = useState('');
+    const [newMobile, setNewMobile] = useState('');
+    const [adding, setAdding] = useState(false);
 
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001';
     // Master admin, org-wide viewers (super_admin tab), and dual-listed mentors (orgViewer)
@@ -79,24 +85,26 @@ export default function CheckinPage() {
         fetchZones();
     }, [isLoading, token, canAccessCheckin, backendUrl]);
 
+    const fetchMembers = async () => {
+        try {
+            const url = `${backendUrl}/api/checkin/members?zone=${encodeURIComponent(selectedZone)}&unit=${encodeURIComponent(selectedUnit)}`;
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('Failed to fetch checkin members');
+            const data = await response.json();
+            setMembers(data.members);
+        } catch (error) {
+            console.error('Error fetching checkin members:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (isLoading || !token || !canAccessCheckin) return;
-        const fetchMembers = async () => {
-            try {
-                const url = `${backendUrl}/api/checkin/members?zone=${encodeURIComponent(selectedZone)}&unit=${encodeURIComponent(selectedUnit)}`;
-                const response = await fetch(url, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!response.ok) throw new Error('Failed to fetch checkin members');
-                const data = await response.json();
-                setMembers(data.members);
-            } catch (error) {
-                console.error('Error fetching checkin members:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchMembers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoading, token, canAccessCheckin, selectedZone, selectedUnit, backendUrl]);
 
     const updateCheckin = async (member: CheckinMember, updates: Partial<Pick<CheckinMember, 'present' | 'peaceRadio' | 'zameel'>>) => {
@@ -126,6 +134,45 @@ export default function CheckinPage() {
         }
     };
 
+    const handleAddAttendee = async () => {
+        const zone = newZone.trim();
+        const unit = newUnit.trim();
+        const name = newName.trim();
+        const mobile = newMobile.trim();
+
+        if (!zone || !name || !mobile) {
+            alert('Zone, name, and mobile number are required.');
+            return;
+        }
+
+        setAdding(true);
+        try {
+            const response = await fetch(`${backendUrl}/api/checkin/attendee`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ zone, unit, name, mobile })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                alert(data.message || 'Failed to add attendee.');
+                return;
+            }
+
+            setNewZone('');
+            setNewUnit('');
+            setNewName('');
+            setNewMobile('');
+            setAddFormOpen(false);
+            alert(`${name} added and marked present!`);
+            fetchMembers();
+        } catch (error) {
+            console.error('Error adding attendee:', error);
+            alert('Failed to add attendee. Please try again.');
+        } finally {
+            setAdding(false);
+        }
+    };
+
     const handleLogout = () => {
         logout();
         navigate('/login');
@@ -138,6 +185,13 @@ export default function CheckinPage() {
     const unitOptions = selectedZone === 'all'
         ? []
         : (zones.find(z => z.name === selectedZone)?.units || []);
+
+    // Unit suggestions for the add-attendee form: units of the typed zone if it matches
+    // an existing one, otherwise every known unit as a general fallback
+    const matchedZone = zones.find(z => z.name.toLowerCase() === newZone.trim().toLowerCase());
+    const newUnitOptions = matchedZone
+        ? matchedZone.units
+        : Array.from(new Set(zones.flatMap(z => z.units))).sort();
 
     const searchLower = search.trim().toLowerCase();
     const visibleMembers = searchLower
@@ -152,6 +206,9 @@ export default function CheckinPage() {
             <header className="campaign-header">
                 <h1>🧾 Check-in</h1>
                 <div className="campaign-header-actions">
+                    <button className="header-btn" onClick={() => setAddFormOpen(!addFormOpen)} title="Add Attendee">
+                        ➕
+                    </button>
                     <button className="header-btn" onClick={() => navigate('/checkin-report')} title="Check-in Report">
                         📊
                     </button>
@@ -165,6 +222,94 @@ export default function CheckinPage() {
             </header>
 
             <main className="campaign-content">
+                {addFormOpen && (
+                    <div className="template-card">
+                        <label style={{ fontWeight: 700, fontSize: '15px', color: '#25D366', display: 'block', marginBottom: '12px' }}>
+                            ➕ Add Attendee
+                        </label>
+
+                        <div className="filter-group">
+                            <label htmlFor="new-attendee-zone">Zone:</label>
+                            <input
+                                id="new-attendee-zone"
+                                type="text"
+                                list="checkin-zone-datalist"
+                                value={newZone}
+                                onChange={(e) => setNewZone(e.target.value)}
+                                placeholder="Zone name..."
+                                className="zone-select"
+                            />
+                            <datalist id="checkin-zone-datalist">
+                                {zones.map(zone => (
+                                    <option key={zone.name} value={zone.name} />
+                                ))}
+                            </datalist>
+                        </div>
+
+                        <div className="filter-group">
+                            <label htmlFor="new-attendee-unit">Unit:</label>
+                            <input
+                                id="new-attendee-unit"
+                                type="text"
+                                list="checkin-unit-datalist"
+                                value={newUnit}
+                                onChange={(e) => setNewUnit(e.target.value)}
+                                placeholder="Unit name..."
+                                className="zone-select"
+                            />
+                            <datalist id="checkin-unit-datalist">
+                                {newUnitOptions.map(unit => (
+                                    <option key={unit} value={unit} />
+                                ))}
+                            </datalist>
+                        </div>
+
+                        <div className="filter-group">
+                            <label htmlFor="new-attendee-name">Name:</label>
+                            <input
+                                id="new-attendee-name"
+                                type="text"
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder="Full name..."
+                                className="zone-select"
+                            />
+                        </div>
+
+                        <div className="filter-group">
+                            <label htmlFor="new-attendee-mobile">Mobile Number:</label>
+                            <input
+                                id="new-attendee-mobile"
+                                type="tel"
+                                value={newMobile}
+                                onChange={(e) => setNewMobile(e.target.value)}
+                                placeholder="Mobile number..."
+                                className="zone-select"
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '4px', flexWrap: 'wrap' }}>
+                            <button onClick={handleAddAttendee} disabled={adding}
+                                className="template-btn"
+                                style={{
+                                    background: adding ? '#aaa' : '#25D366', color: 'white', border: 'none',
+                                    cursor: adding ? 'not-allowed' : 'pointer',
+                                    boxShadow: '0 3px 10px rgba(37,211,102,0.3)'
+                                }}>
+                                {adding ? '⏳ Adding...' : '✅ Add & Check In'}
+                            </button>
+                            <button onClick={() => setAddFormOpen(false)}
+                                className="template-btn"
+                                style={{ background: 'transparent', color: '#334155', border: '1px solid #cbd5e1' }}>
+                                Cancel
+                            </button>
+                        </div>
+                        <p style={{ color: '#aaa', fontSize: '12px', marginTop: '12px' }}>
+                            ℹ️ Adds a new row to the sheet and marks them Present right away.
+                        </p>
+                    </div>
+                )}
+
                 <div className="filters-card">
                     <div className="filter-group">
                         <label htmlFor="checkin-zone-select">Zone:</label>
